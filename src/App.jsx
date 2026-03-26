@@ -1,9 +1,57 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 // ============================================================
-// ORDERFLOW MX v3 — Full Platform
-// Catálogos + Reportes + Calendario + Conciliación + Duplicidad + Backup
+// ORDERFLOW MX — Final Build
+// All Modules + CFDI Parser + File Downloads
 // ============================================================
+
+// ── CFDI Parser ──────────────────────────────
+const CFDIParse = (xml) => {
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  if (doc.querySelector("parsererror")) return { error: "XML inválido" };
+  const ns = "http://www.sat.gob.mx/cfd/4", tns = "http://www.sat.gob.mx/TimbreFiscalDigital";
+  const comp = doc.getElementsByTagNameNS(ns, "Comprobante")[0] || doc.querySelector("Comprobante") || doc.documentElement;
+  if (!comp) return { error: "Sin Comprobante" };
+  const g = (el, a) => el?.getAttribute(a) || "";
+  const qe = (p, u, t) => p?.getElementsByTagNameNS(u, t)[0] || p?.querySelector(t);
+  const em = qe(comp, ns, "Emisor"), re = qe(comp, ns, "Receptor") || doc.querySelectorAll("[Rfc]")[1];
+  const ti = qe(doc, tns, "TimbreFiscalDigital") || doc.querySelector("TimbreFiscalDigital");
+  const cn = qe(comp, ns, "Conceptos") || comp.querySelector("Conceptos");
+  const im = qe(comp, ns, "Impuestos") || comp.querySelector("Impuestos");
+  const conceptos = [];
+  const ce = cn ? (cn.getElementsByTagNameNS(ns, "Concepto").length ? cn.getElementsByTagNameNS(ns, "Concepto") : cn.querySelectorAll("Concepto")) : [];
+  for (let i = 0; i < ce.length; i++) {
+    const c = ce[i];
+    conceptos.push({ cprod: g(c, "ClaveProdServ"), noid: g(c, "NoIdentificacion"), cant: parseFloat(g(c, "Cantidad")) || 0, unidad: g(c, "Unidad"), descripcion: g(c, "Descripcion"), vu: parseFloat(g(c, "ValorUnitario")) || 0, importe: parseFloat(g(c, "Importe")) || 0, descuento: parseFloat(g(c, "Descuento")) || 0 });
+  }
+  const traslados = []; const te = im?.querySelectorAll("Traslado") || [];
+  for (let i = 0; i < te.length; i++) traslados.push({ impuesto: g(te[i], "Impuesto"), tasa: g(te[i], "TasaOCuota"), importe: parseFloat(g(te[i], "Importe")) || 0 });
+  const totalImp = parseFloat(im?.getAttribute("TotalImpuestosTrasladados")) || traslados.reduce((s, t) => s + t.importe, 0);
+  const fp = { "01": "Efectivo", "02": "Cheque", "03": "Transferencia", "04": "Tarjeta crédito", "99": "Por definir" };
+  const mp = { PUE: "Pago en una exhibición", PPD: "Pago en parcialidades" };
+  const tp = { I: "Ingreso (Factura)", E: "Egreso (Nota de crédito)", P: "Pago", T: "Traslado" };
+  return { version: g(comp, "Version"), serie: g(comp, "Serie"), folio: g(comp, "Folio"), fecha: g(comp, "Fecha"), formaPagoL: fp[g(comp, "FormaPago")] || g(comp, "FormaPago"), metodoPagoL: mp[g(comp, "MetodoPago")] || g(comp, "MetodoPago"), subTotal: parseFloat(g(comp, "SubTotal")) || 0, descuento: parseFloat(g(comp, "Descuento")) || 0, moneda: g(comp, "Moneda") || "MXN", total: parseFloat(g(comp, "Total")) || 0, tipoL: tp[g(comp, "TipoDeComprobante")] || g(comp, "TipoDeComprobante"), emisor: { rfc: g(em, "Rfc"), nombre: g(em, "Nombre") }, receptor: { rfc: g(re, "Rfc"), nombre: g(re, "Nombre"), uso: g(re, "UsoCFDI") }, conceptos, impuestos: { traslados, total: totalImp }, timbre: ti ? { uuid: g(ti, "UUID"), fecha: g(ti, "FechaTimbrado") } : null, descLineas: conceptos.reduce((s, c) => s + c.descuento, 0) };
+};
+
+const CFDIDemo = (order) => {
+  const uuid = crypto.randomUUID?.()?.toUpperCase() || "A1B2C3D4-5678-90AB-CDEF-1234567890AB";
+  const now = new Date().toISOString().replace("Z", "");
+  const ls = order.lines.map(l => { const q = l.deliveredQty || l.quantity; const i = q * l.unitPrice; return `<cfdi:Concepto ClaveProdServ="50000000" NoIdentificacion="${l.sku}" Cantidad="${q}" ClaveUnidad="H87" Unidad="${l.unit}" Descripcion="${l.description}" ValorUnitario="${l.unitPrice.toFixed(2)}" Importe="${i.toFixed(2)}" Descuento="${(l.discount || 0).toFixed(2)}" ObjetoImp="02"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="${i.toFixed(2)}" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="${(i * 0.16).toFixed(2)}"/></cfdi:Traslados></cfdi:Impuestos></cfdi:Concepto>`; }).join("");
+  const sub = order.lines.reduce((s, l) => s + ((l.deliveredQty || l.quantity) * l.unitPrice), 0);
+  const desc = order.lines.reduce((s, l) => s + (l.discount || 0), 0);
+  const iva = (sub - desc) * 0.16; const tot = sub - desc + iva;
+  return `<?xml version="1.0"?><cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="${Math.floor(10000 + Math.random() * 90000)}" Fecha="${now}" FormaPago="03" MetodoPago="PUE" SubTotal="${sub.toFixed(2)}" Descuento="${desc.toFixed(2)}" Moneda="MXN" Total="${tot.toFixed(2)}" TipoDeComprobante="I" LugarExpedicion="06600"><cfdi:Emisor Rfc="TUE123456ABC" Nombre="Tu Empresa SA de CV" RegimenFiscal="601"/><cfdi:Receptor Rfc="${order.chainCode || "WAL"}890101XYZ" Nombre="${order.chain}" UsoCFDI="G03" RegimenFiscalReceptor="601"/><cfdi:Conceptos>${ls}</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="${iva.toFixed(2)}"><cfdi:Traslados><cfdi:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="${iva.toFixed(2)}"/></cfdi:Traslados></cfdi:Impuestos><cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="${uuid}" FechaTimbrado="${now}" RfcProvCertif="SPR190613I52" SelloCFD="abc..." SelloSAT="xyz..." NoCertificadoSAT="00001000000508102505"/></cfdi:Complemento></cfdi:Comprobante>`;
+};
+
+// ── File Download Helper ──
+function downloadFile(fileObj) {
+  if (fileObj.dataUrl) {
+    const a = document.createElement("a"); a.href = fileObj.dataUrl; a.download = fileObj.name; a.click();
+  } else {
+    const blob = new Blob([`[Archivo demo] ${fileObj.name}\nTipo: ${fileObj.type || "desconocido"}\nTamaño: ${fileObj.size || "N/A"}`], { type: "text/plain" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = fileObj.name; a.click(); URL.revokeObjectURL(url);
+  }
+}
 
 // --- MASTER CATALOGS DATA ---
 const MASTER_PRODUCTS = [
@@ -228,10 +276,10 @@ const I={
 // --- CSS ---
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
-:root{--bg:#f8f9fb;--bg-card:#fff;--bg-sidebar:#0c1018;--bg-sidebar-hover:#161d2a;--bg-sidebar-active:#1a2538;--border:#e4e8ee;--border-light:#f1f4f8;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--text-sidebar:#8094ad;--text-sidebar-active:#f1f5f9;--accent:#2563eb;--accent-light:#dbeafe;--accent-dark:#1d4ed8;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--orange:#f97316;--purple:#8b5cf6;--cyan:#06b6d4;--shadow-sm:0 1px 2px rgba(0,0,0,.04);--shadow-md:0 4px 12px rgba(0,0,0,.06);--shadow-lg:0 12px 36px rgba(0,0,0,.1);--radius:8px;--radius-lg:12px;--font:'DM Sans',-apple-system,sans-serif;--font-mono:'JetBrains Mono',monospace}
+:root{--bg:#fafbfc;--bg-card:#ffffff;--bg-sidebar:#0f1419;--bg-sidebar-hover:#1a2332;--bg-sidebar-active:#1e2d3d;--border:#e2e8f0;--border-light:#f1f5f9;--text-primary:#0f172a;--text-secondary:#475569;--text-tertiary:#94a3b8;--text-sidebar:#94a3b8;--text-sidebar-active:#f8fafc;--accent:#2563eb;--accent-light:#dbeafe;--accent-dark:#1d4ed8;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--orange:#f97316;--purple:#8b5cf6;--cyan:#06b6d4;--shadow-sm:0 1px 2px rgba(0,0,0,0.04);--shadow-md:0 4px 12px rgba(0,0,0,0.06);--shadow-lg:0 8px 30px rgba(0,0,0,0.08);--radius:8px;--radius-lg:12px;--font:'DM Sans',-apple-system,sans-serif;--font-mono:'JetBrains Mono',monospace}
 *{margin:0;padding:0;box-sizing:border-box}
 .app{display:flex;height:100vh;overflow:hidden;font-family:var(--font);color:var(--text-primary);background:var(--bg)}
-.sidebar{width:232px;min-width:232px;background:var(--bg-sidebar);display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.05);overflow-y:auto}
+.sidebar{width:240px;min-width:240px;background:var(--bg-sidebar);display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,0.06);overflow-y:auto}
 .sidebar-brand{padding:20px 16px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.06)}
 .sidebar-brand-icon{width:32px;height:32px;background:linear-gradient(135deg,#2563eb,#7c3aed);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:12px}
 .sidebar-brand-text{font-size:16px;font-weight:700;color:#f8fafc;letter-spacing:-.3px}
@@ -1120,18 +1168,52 @@ function DeliveriesView({orders,onSelectOrder,onSchedule,onConfirm,onTransit}){
 
 function UploadView({onProcess}){
   const [files,setFiles]=useState([]);const ref=useRef();
-  return(<div><div className="page-header"><h1>Cargar Pedidos</h1></div>
-    <div className="card" style={{padding:20,marginBottom:16}}><div className="upload-zone" onClick={()=>ref.current?.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();setFiles(p=>[...p,...Array.from(e.dataTransfer.files)])}}>
-      <div style={{transform:"scale(1.8)",marginBottom:8,color:"var(--text-tertiary)"}}>{I.upload}</div><h3 style={{fontSize:14,fontWeight:600,marginTop:8}}>Arrastra o selecciona archivos</h3>
-      <div style={{marginTop:8,display:"flex",gap:4,justifyContent:"center"}}>{["PDF","XLSX","CSV","PNG"].map(f=><span key={f} className="format-tag">{f}</span>)}</div>
-      <input ref={ref} type="file" multiple hidden onChange={e=>setFiles(p=>[...p,...Array.from(e.target.files)])}/>
-    </div></div>
-    {files.length>0&&<div className="card" style={{padding:16}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{fontWeight:700,fontSize:13}}>{files.length} archivo(s)</span>
-      <div style={{display:"flex",gap:6}}><button className="btn btn-secondary btn-sm" onClick={()=>setFiles([])}>Limpiar</button><button className="btn btn-primary btn-sm" onClick={()=>onProcess(files)}>Procesar</button></div></div>
-      {files.map((f,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0",fontSize:12.5}}><span style={{color:"var(--accent)"}}>{I.file}</span>{f.name}<span style={{marginLeft:"auto",color:"var(--text-tertiary)",fontSize:11}}>{(f.size/1024).toFixed(1)}KB</span>
-        <button className="btn btn-ghost btn-sm" onClick={()=>setFiles(p=>p.filter((_,j)=>j!==i))} style={{color:"var(--danger)"}}>{I.x}</button></div>)}
-    </div>}
-  </div>);
+  const addFiles = (fileList) => {
+    Array.from(fileList).forEach(f => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setFiles(prev => [...prev, { name: f.name, size: f.size, type: f.type, dataUrl: e.target.result, raw: f }]);
+      };
+      reader.readAsDataURL(f);
+    });
+  };
+  return (
+    <div>
+      <div className="page-header"><h1>Cargar Pedidos</h1><p>Sube documentos en cualquier formato — el sistema los procesará automáticamente</p></div>
+      <div className="card" style={{padding:24,marginBottom:20}}>
+        <div className="upload-zone" onClick={()=>ref.current?.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();addFiles(e.dataTransfer.files)}}>
+          <div style={{transform:"scale(1.8)",marginBottom:16,color:"var(--text-tertiary)"}}>{I.upload}</div>
+          <h3 style={{fontSize:15,fontWeight:600,marginBottom:4}}>Arrastra archivos aquí o haz clic para seleccionar</h3>
+          <p style={{fontSize:13,color:"var(--text-tertiary)"}}>Sube uno o varios pedidos al mismo tiempo</p>
+          <div style={{marginTop:12,display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>{["PDF","XLSX","XLS","CSV","XML","PNG","JPG"].map(f=>(
+            <span key={f} className="format-tag">{f}</span>
+          ))}</div>
+          <input ref={ref} type="file" multiple hidden accept=".pdf,.xlsx,.xls,.csv,.xml,.png,.jpg,.jpeg" onChange={e=>addFiles(e.target.files)}/>
+        </div>
+      </div>
+      {files.length>0&&(
+        <div className="card" style={{padding:20}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <h3 style={{fontSize:14,fontWeight:700}}>{files.length} archivo{files.length!==1?"s":""} listo{files.length!==1?"s":""}</h3>
+            <div style={{display:"flex",gap:8}}>
+              <button className="btn btn-secondary btn-sm" onClick={()=>setFiles([])}>Limpiar</button>
+              <button className="btn btn-primary btn-sm" onClick={()=>onProcess(files)}>{I.upload} Procesar archivos</button>
+            </div>
+          </div>
+          {files.map((f,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:"1px solid var(--border-light)",borderRadius:"var(--radius)",marginBottom:6}}>
+              <span style={{color:"var(--accent)"}}>{I.file}</span>
+              <span style={{fontWeight:500,flex:1}}>{f.name}</span>
+              <span style={{fontSize:11,color:"var(--text-tertiary)"}}>{(f.size/1024).toFixed(1)} KB</span>
+              <span className="format-tag">{f.name.split(".").pop().toUpperCase()}</span>
+              <button className="btn btn-ghost btn-sm" title="Descargar" onClick={()=>downloadFile(f)}>{I.download}</button>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setFiles(p=>p.filter((_,j)=>j!==i))} style={{color:"var(--danger)"}}>{I.x}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AlertsView({orders,onSelectOrder}){
@@ -1177,10 +1259,26 @@ function OrderDetailView({order,onBack,onUpdate,onToast,onSchedule,onConfirm,onT
         <button className="btn btn-secondary btn-sm">{I.download} Exportar</button>
         {order.status==="VALIDATED"&&<button className="btn btn-purple btn-sm" onClick={()=>onSchedule(order)}>Cita</button>}
         {(d.status==="SCHEDULED"||d.status==="IN_TRANSIT")&&<button className="btn btn-success btn-sm" onClick={()=>onConfirm(order)}>Confirmar</button>}
-        {["DELIVERED","PARTIAL_DELIVERY"].includes(order.status)&&!order.invoice&&<button className="btn btn-cyan" onClick={()=>onUploadInvoice(order)}>{I.receipt} Factura</button>}
+        {["DELIVERED","PARTIAL_DELIVERY"].includes(order.status)&&!order.invoice&&<button className="btn btn-cyan" onClick={()=>onUploadInvoice(order)}>{I.receipt} Factura manual</button>}
+        {["DELIVERED","PARTIAL_DELIVERY"].includes(order.status)&&!order.invoice&&<button className="btn btn-primary btn-sm" onClick={()=>{const xml=CFDIDemo(order);const p=CFDIParse(xml);if(!p.error){onUpdate({...order,status:"INVOICED",invoice:{invoiceNumber:`${p.serie||""}${p.folio||""}`,invoiceDate:p.fecha?.substring(0,10),invoiceTotal:p.total,invoiceFile:`${p.serie||""}${p.folio||""}.xml`,reconciled:false,cfdiData:p,discounts:p.conceptos.filter(c=>c.descuento>0).map(c=>({type:"Desc. línea",concept:c.descripcion,amount:c.descuento})),discrepancies:[]},lines:order.lines.map(l=>{const m=p.conceptos.find(c=>c.noid===l.sku);return m?{...l,invoicedQty:m.cant,invoicedPrice:m.vu}:l}),history:[...order.history,{date:new Date().toISOString(),action:`CFDI demo registrado — UUID: ${p.timbre?.uuid?.substring(0,8)||"N/A"}`,user:"admin@empresa.com",icon:"🧾"}]});onToast("CFDI demo registrado")}}}>🧾 CFDI Demo</button>}
         {!["VALIDATED","SCHEDULED","IN_TRANSIT","DELIVERED","INVOICED","RECONCILED"].includes(order.status)&&<button className="btn btn-success btn-sm" onClick={validate}>Validar</button>}
       </div>
     </div>
+    {/* Uploaded files with download */}
+    {order.uploadedFiles?.length>0&&(
+      <div className="card" style={{padding:16,marginBottom:16}}>
+        <div className="detail-section-title">Archivos del pedido</div>
+        {order.uploadedFiles.map((f,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",border:"1px solid var(--border-light)",borderRadius:"var(--radius)",marginBottom:6}}>
+            <span style={{color:"var(--accent)"}}>{I.file}</span>
+            <span style={{fontWeight:500,flex:1}}>{f.name}</span>
+            <span style={{fontSize:11,color:"var(--text-tertiary)"}}>{f.size}</span>
+            <span className="format-tag">{(f.type||f.name?.split(".").pop()||"").toUpperCase()}</span>
+            <button className="btn btn-secondary btn-sm" onClick={()=>downloadFile(f)}>{I.download} Descargar</button>
+          </div>
+        ))}
+      </div>
+    )}
     {order.validations?.length>0&&<div style={{marginBottom:12}}>{order.validations.map((v,i)=><div key={i} className={`validation-item ${v.type}`}>{v.type==="error"?"⚠️":"⚡"} {v.message}</div>)}</div>}
     <div className="tabs">{[["general","General"],["lines",`Líneas (${order.lines.length})`],["delivery","Entrega"],["invoice","🧾 Facturación"],["history","Historial"]].map(([k,l])=>
       <div key={k} className={`tab ${tab===k?"active":""}`} onClick={()=>setTab(k)}>{l}</div>)}</div>
@@ -1248,6 +1346,29 @@ function OrderDetailView({order,onBack,onUpdate,onToast,onSchedule,onConfirm,onT
           <div style={{marginTop: 12, display: "flex", gap: 6}}>
             <button className="btn btn-secondary btn-sm" onClick={() => onUploadInvoice(order)}>{I.edit} Editar factura</button>
           </div>
+          {/* CFDI Data from SAT */}
+          {order.invoice.cfdiData && (
+            <div style={{marginTop: 20}}>
+              <div className="detail-section-title">Datos del CFDI (SAT)</div>
+              {order.invoice.cfdiData.timbre?.uuid && (
+                <div style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,padding:"4px 12px",borderRadius:20,background:"#d1fae5",color:"#059669",marginBottom:12}}>
+                  ✓ Timbrado — UUID: <span style={{fontFamily:"var(--font-mono)"}}>{order.invoice.cfdiData.timbre.uuid}</span>
+                </div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                {[
+                  ["Emisor",`${order.invoice.cfdiData.emisor?.nombre||"—"} (${order.invoice.cfdiData.emisor?.rfc||"—"})`],
+                  ["Receptor",`${order.invoice.cfdiData.receptor?.nombre||"—"} (${order.invoice.cfdiData.receptor?.rfc||"—"})`],
+                  ["Tipo",order.invoice.cfdiData.tipoL||"—"],
+                  ["Forma de pago",order.invoice.cfdiData.formaPagoL||"—"],
+                  ["Método de pago",order.invoice.cfdiData.metodoPagoL||"—"],
+                  ["Moneda",order.invoice.cfdiData.moneda||"MXN"],
+                ].map(([k,v])=>(
+                  <div key={k}><span className="detail-field-label">{k}</span><span className="detail-field-value">{v}</span></div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="card" style={{padding: 20}}>
@@ -1335,6 +1456,25 @@ export default function App(){
   const [toast,setToast]=useState(null);
   const [scheduleM,setScheduleM]=useState(null);const [confirmM,setConfirmM]=useState(null);
   const [invoiceM,setInvoiceM]=useState(null);
+  const [cfdiModal,setCfdiModal]=useState(null); // "upload" | "result" | null
+  const [cfdiOrder,setCfdiOrder]=useState(null);
+  const [cfdiData,setCfdiData]=useState(null);
+
+  const handleCFDIRegister=()=>{
+    if(!cfdiOrder||!cfdiData)return;
+    const order=cfdiOrder;const cfdi=cfdiData;
+    const totalDesc=cfdi.descuento+cfdi.descLineas;
+    const discounts=[];
+    if(cfdi.descuento>0)discounts.push({type:"Descuento global CFDI",concept:"Comprobante",amount:cfdi.descuento});
+    cfdi.conceptos.forEach(c=>{if(c.descuento>0)discounts.push({type:"Descuento línea",concept:`${c.descripcion} (${c.noid})`,amount:c.descuento})});
+    const diff=Math.abs(cfdi.total-order.total);
+    const invoice={invoiceNumber:`${cfdi.serie||""}${cfdi.folio||""}`||`CFDI-${Date.now()}`,invoiceDate:cfdi.fecha?.substring(0,10)||today(),invoiceTotal:cfdi.total,invoiceFile:`${cfdi.serie||"CFDI"}${cfdi.folio||""}.xml`,reconciled:false,cfdiData:cfdi,discounts,discrepancies:diff>1?[{reason:totalDesc>0?`Descuentos + IVA`:"Incluye IVA",difference:+(cfdi.total-order.total).toFixed(2)}]:[]};
+    const updatedLines=order.lines.map(l=>{const m=cfdi.conceptos.find(c=>c.noid===l.sku||c.descripcion?.includes(l.description?.split(" ")[0]));return m?{...l,invoicedQty:m.cant,invoicedPrice:m.vu}:l});
+    updateOrder({...order,status:"INVOICED",invoice,lines:updatedLines,history:[...order.history,{date:new Date().toISOString(),action:`CFDI ${invoice.invoiceNumber} registrado — UUID: ${cfdi.timbre?.uuid?.substring(0,8)||"N/A"}...`,user:"admin@empresa.com",icon:"🧾"}]});
+    setCfdiModal(null);setCfdiOrder(null);setCfdiData(null);
+    setToast(`CFDI ${invoice.invoiceNumber} registrado con ${cfdi.conceptos.length} conceptos`);
+    setView("cfdi");
+  };
 
   const updateOrder=u=>{setOrders(p=>p.map(o=>o.id===u.id?u:o));if(selected?.id===u.id)setSelected(u)};
   const handleScheduleSave=(data,isR)=>{const o=scheduleM;updateOrder({...o,status:"SCHEDULED",delivery:{...o.delivery,...data},history:[...o.history,{date:new Date().toISOString(),action:isR?`Reprogramada: ${data.appointmentDate}`:`Cita: ${data.appointmentDate} ${data.appointmentTime}`,user:"admin@empresa.com",icon:"📅"}]});setToast(isR?"Reprogramada":"Cita programada")};
@@ -1357,7 +1497,8 @@ export default function App(){
       lines:[{id:`L-n-${i}`,sku:"SKU-001",clientCode:`${ch.code}-001`,internalCode:"SKU-001",description:"Aceite vegetal 1L",presentation:"1L",quantity:100,unit:"CJ",unitPrice:32.5,lineTotal:3250,discount:0,confidence:.85,deliveredQty:0,invoicedQty:0,invoicedPrice:0}],
       total:3250,fileType:f.name?.split(".").pop()?.toUpperCase()||"PDF",fileName:f.name||"doc.pdf",uploadDate:new Date().toISOString(),uploadedBy:"admin@empresa.com",confidence:.82,status:"PENDING_REVIEW",
       validations:[{type:"warning",field:"general",message:"Nuevo — revisar"}],history:[{date:new Date().toISOString(),action:"Cargado",user:"admin@empresa.com",icon:"📥"}],reviewed:false,
-      delivery:{status:"PENDING",appointmentDate:null,appointmentTime:null,appointmentEndTime:null,carrier:null,driverName:null,driverPhone:null,vehiclePlates:null,dockNumber:null,actualDeliveryDate:null,actualDeliveryTime:null,receivedBy:null,proofOfDelivery:null,rejectionReason:null},invoice:null,duplicateOf:null}});
+      delivery:{status:"PENDING",appointmentDate:null,appointmentTime:null,appointmentEndTime:null,carrier:null,driverName:null,driverPhone:null,vehiclePlates:null,dockNumber:null,actualDeliveryDate:null,actualDeliveryTime:null,receivedBy:null,proofOfDelivery:null,rejectionReason:null},invoice:null,duplicateOf:null,
+      uploadedFiles:[{name:f.name||"documento",size:f.size?`${(f.size/1024).toFixed(1)} KB`:"N/A",type:f.name?.split(".").pop()||"pdf",dataUrl:f.dataUrl||null}]}});
     setOrders(p=>[...nw,...p]);setProcessing(false);setProcFiles(null);setView("dashboard");setToast(`${nw.length} procesado(s)`)};
   const go=o=>{setSelected(o);setView("detail")};
 
@@ -1366,6 +1507,7 @@ export default function App(){
     alerts:orders.filter(o=>daysUntil(o.deliveryDate)<=3&&daysUntil(o.deliveryDate)>=0||o.status==="ERROR"||o.status==="DUPLICATE"||o.delivery?.status==="REJECTED").length,
     deliveries:orders.filter(o=>["VALIDATED","SCHEDULED","IN_TRANSIT"].includes(o.status)).length,
     invoiced:orders.filter(o=>o.invoice&&!o.invoice.reconciled).length,
+    noInvoice:orders.filter(o=>["DELIVERED","PARTIAL_DELIVERY"].includes(o.status)&&!o.invoice).length,
     duplicates:Object.values(orders.reduce((m,o)=>{m[o.orderNumber]=(m[o.orderNumber]||0)+1;return m},{})).filter(c=>c>1).length,
   }),[orders]);
 
@@ -1373,9 +1515,10 @@ export default function App(){
     {id:"dashboard",label:"Pedidos",icon:I.orders,badge:counts.pending||null},
     {id:"deliveries",label:"Entregas",icon:I.truck,badge:counts.deliveries||null,bc:"badge-purple"},
     {id:"calendar",label:"Calendario",icon:I.calendar},
-    {id:"upload",label:"Cargar",icon:I.upload},
+    {id:"upload",label:"Cargar pedidos",icon:I.upload},
     {id:"alerts",label:"Alertas",icon:I.alert,badge:counts.alerts||null},
     "sep",
+    {id:"cfdi",label:"CFDI / Facturas",icon:I.receipt,badge:counts.noInvoice||null,bc:"badge-cyan"},
     {id:"catalogs",label:"Catálogos",icon:I.layers},
     {id:"reports",label:"Reportes",icon:I.chart},
     {id:"reconciliation",label:"Conciliación",icon:I.receipt,badge:counts.invoiced||null,bc:"badge-cyan"},
@@ -1413,6 +1556,7 @@ export default function App(){
           {view==="calendar"&&<CalendarView orders={orders} onSelectOrder={go}/>}
           {view==="upload"&&<UploadView onProcess={handleProcess}/>}
           {view==="alerts"&&<AlertsView orders={orders} onSelectOrder={go}/>}
+          {view==="cfdi"&&<CFDIView orders={orders} onSelectOrder={go} onUploadCFDI={(o)=>{setCfdiOrder(o);setCfdiModal("upload")}} onDemoCFDI={(o)=>{const xml=CFDIDemo(o);const p=CFDIParse(xml);if(!p.error){setCfdiOrder(o);setCfdiData(p);setCfdiModal("result")}}} />}
           {view==="catalogs"&&<CatalogsView toast={setToast}/>}
           {view==="reports"&&<ReportsView orders={orders}/>}
           {view==="reconciliation"&&<ReconciliationView orders={orders} onUpdate={updateOrder} setToast={setToast} onUploadInvoice={setInvoiceM}/>}
@@ -1426,7 +1570,157 @@ export default function App(){
       {scheduleM&&<ScheduleModal order={scheduleM} onSave={handleScheduleSave} onClose={()=>setScheduleM(null)}/>}
       {confirmM&&<ConfirmDeliveryModal order={confirmM} onSave={handleConfirmSave} onClose={()=>setConfirmM(null)}/>}
       {invoiceM&&<InvoiceUploadModal order={invoiceM} onSave={handleInvoiceSave} onClose={()=>setInvoiceM(null)}/>}
+      {cfdiModal==="upload"&&cfdiOrder&&<CFDIUploadModalView order={cfdiOrder} onClose={()=>{setCfdiModal(null);setCfdiOrder(null)}} onDemo={()=>{const xml=CFDIDemo(cfdiOrder);const p=CFDIParse(xml);if(!p.error){setCfdiData(p);setCfdiModal("result")}}} onFile={(xmlStr)=>{const p=CFDIParse(xmlStr);if(p.error){setToast("Error XML: "+p.error);return}setCfdiData(p);setCfdiModal("result")}} />}
+      {cfdiModal==="result"&&cfdiOrder&&cfdiData&&<CFDIResultModalView order={cfdiOrder} cfdi={cfdiData} onClose={()=>{setCfdiModal(null);setCfdiData(null)}} onSave={handleCFDIRegister} />}
       {toast&&<Toast message={toast} onClose={()=>setToast(null)}/>}
     </div>
   </>);
+}
+
+// ==========================================
+// CFDI VIEW — Pedidos sin factura + Facturas registradas
+// ==========================================
+function CFDIView({orders, onSelectOrder, onUploadCFDI, onDemoCFDI}) {
+  const noInv = useMemo(() => orders.filter(o => ["DELIVERED","PARTIAL_DELIVERY"].includes(o.status) && !o.invoice), [orders]);
+  const withInv = useMemo(() => orders.filter(o => o.invoice), [orders]);
+
+  return (
+    <div>
+      <div className="page-header"><h1>CFDI / Facturas</h1><p>Sube archivos XML del SAT — extracción automática de UUID, RFC, conceptos, descuentos e impuestos</p></div>
+      <div className="stats-grid" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
+        <div className="stat-card"><div className="stat-label">Sin factura</div><div className="stat-value" style={{color:"var(--warning)"}}>{noInv.length}</div><div className="stat-sub">Entregados sin CFDI</div></div>
+        <div className="stat-card"><div className="stat-label">Facturados</div><div className="stat-value" style={{color:"var(--cyan)"}}>{withInv.filter(x=>!x.invoice.reconciled).length}</div></div>
+        <div className="stat-card"><div className="stat-label">Conciliados</div><div className="stat-value" style={{color:"var(--success)"}}>{withInv.filter(x=>x.invoice.reconciled).length}</div></div>
+        <div className="stat-card"><div className="stat-label">Total facturado</div><div className="stat-value" style={{fontSize:20}}>{fmtCurrency(withInv.reduce((s,x)=>s+(x.invoice.invoiceTotal||0),0))}</div></div>
+      </div>
+
+      <h3 style={{fontSize:15,fontWeight:700,marginBottom:14}}>Pedidos entregados sin factura</h3>
+      {noInv.length===0 ? (
+        <div className="card" style={{padding:24,marginBottom:28}}><div className="empty-state"><h3>Todos los pedidos tienen factura</h3></div></div>
+      ) : (
+        <div className="card" style={{overflow:"hidden",marginBottom:28}}>
+          <table><thead><tr><th>Pedido</th><th>Cadena</th><th>Destino</th><th>Entregado</th><th>Total</th><th>Acciones</th></tr></thead>
+            <tbody>{noInv.map(o => (
+              <tr key={o.id}>
+                <td style={{fontWeight:600}}>{o.orderNumber}</td>
+                <td>{o.chain}</td><td>{o.destination}</td>
+                <td>{fmt(o.delivery?.actualDeliveryDate)}</td>
+                <td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{fmtCurrency(o.total)}</td>
+                <td>
+                  <button className="btn btn-cyan btn-sm" onClick={()=>onUploadCFDI(o)}>🧾 Subir CFDI</button>{" "}
+                  <button className="btn btn-secondary btn-sm" onClick={()=>onDemoCFDI(o)}>Demo XML</button>
+                </td>
+              </tr>
+            ))}</tbody></table>
+        </div>
+      )}
+
+      <h3 style={{fontSize:15,fontWeight:700,marginBottom:14}}>Facturas registradas</h3>
+      {withInv.length===0 ? (
+        <div className="card" style={{padding:24}}><div className="empty-state"><h3>Sin facturas registradas</h3></div></div>
+      ) : (
+        <div className="card" style={{overflow:"hidden"}}>
+          <table><thead><tr><th>Pedido</th><th>Factura</th><th>Cadena</th><th>Total</th><th>Fecha</th><th>CFDI SAT</th><th>Estatus</th></tr></thead>
+            <tbody>{withInv.map(o => (
+              <tr key={o.id} className="clickable" onClick={()=>onSelectOrder(o)}>
+                <td style={{fontWeight:600}}>{o.orderNumber}</td>
+                <td>{o.invoice.invoiceNumber}</td><td>{o.chain}</td>
+                <td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{fmtCurrency(o.invoice.invoiceTotal)}</td>
+                <td>{fmt(o.invoice.invoiceDate)}</td>
+                <td>{o.invoice.cfdiData?.timbre?.uuid ? <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#d1fae5",color:"#059669"}}>✓ Timbrado</span> : <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#fee2e2",color:"#dc2626"}}>Sin CFDI</span>}</td>
+                <td><StatusBadge status={o.invoice.reconciled?"RECONCILED":"INVOICED"}/></td>
+              </tr>
+            ))}</tbody></table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// CFDI UPLOAD MODAL
+// ==========================================
+function CFDIUploadModalView({order, onClose, onDemo, onFile}) {
+  const fileRef = useRef();
+  const handleFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => onFile(e.target.result);
+    reader.readAsText(file);
+  };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>🧾 Subir CFDI (XML del SAT)</h3><button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button></div>
+        <div className="modal-body">
+          <div style={{background:"#f8fafc",borderRadius:8,padding:"12px 16px",marginBottom:20,fontSize:13}}>
+            <strong>{order.orderNumber}</strong> · {order.chain} · {order.destination} · Total: <strong>{fmtCurrency(order.total)}</strong>
+          </div>
+          <div className="upload-zone" onClick={()=>fileRef.current?.click()}
+            onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0])}}>
+            <div style={{fontSize:36,marginBottom:10,opacity:.4}}>🧾</div>
+            <h3 style={{fontSize:15,fontWeight:600,marginBottom:4}}>Arrastra tu archivo XML aquí</h3>
+            <p style={{fontSize:13,color:"var(--text-tertiary)"}}>CFDI 4.0 del SAT — Archivo .xml</p>
+            <div style={{marginTop:12,display:"flex",gap:6,justifyContent:"center"}}><span className="tag">XML</span><span className="tag">CFDI 4.0</span></div>
+            <input ref={fileRef} type="file" hidden accept=".xml" onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0])}}/>
+          </div>
+          <p style={{fontSize:11.5,color:"var(--text-tertiary)",marginTop:14,textAlign:"center"}}>Extracción automática: UUID, RFC emisor/receptor, conceptos, descuentos por línea, IVA, total</p>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={onDemo}>Usar CFDI demo</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// CFDI RESULT MODAL — shows parsed data
+// ==========================================
+function CFDIResultModalView({order, cfdi, onClose, onSave}) {
+  const diff = Math.abs(cfdi.total - order.total);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:720}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>🧾 CFDI Extraído — {cfdi.serie||""}{cfdi.folio||""}</h3><button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button></div>
+        <div className="modal-body" style={{overflowY:"auto"}}>
+          {cfdi.timbre?.uuid ? (
+            <div style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:600,padding:"4px 12px",borderRadius:20,background:"#d1fae5",color:"#059669",marginBottom:14}}>✓ Timbrado — UUID: <span style={{fontFamily:"var(--font-mono)"}}>{cfdi.timbre.uuid}</span></div>
+          ) : (
+            <div style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#fee2e2",color:"#dc2626",marginBottom:14}}>Sin timbre fiscal</div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:18}}>
+            {[["Tipo",cfdi.tipoL],["Folio",`${cfdi.serie||""}${cfdi.folio||"—"}`],["Fecha",cfdi.fecha?.substring(0,10)||"—"],["Emisor",cfdi.emisor?.nombre||"—"],["Receptor",cfdi.receptor?.nombre||"—"],["Uso CFDI",cfdi.receptor?.uso||"—"],["Forma pago",cfdi.formaPagoL],["Método",cfdi.metodoPagoL],["Moneda",cfdi.moneda]].map(([k,v])=>(
+              <div key={k}><div style={{fontSize:10.5,color:"var(--text-tertiary)",fontWeight:600,textTransform:"uppercase",letterSpacing:".3px",marginBottom:2}}>{k}</div><div style={{fontSize:13,fontWeight:600}}>{v}</div></div>
+            ))}
+          </div>
+          <div className="section-title">Conceptos ({cfdi.conceptos.length} líneas)</div>
+          <div style={{overflowX:"auto",marginBottom:18}}>
+            <table style={{fontSize:12}}>
+              <thead><tr><th>Clave/ID</th><th>Descripción</th><th>Cant.</th><th>P.U.</th><th>Desc.</th><th>Importe</th></tr></thead>
+              <tbody>{cfdi.conceptos.map((c,i)=>(
+                <tr key={i}><td style={{fontFamily:"var(--font-mono)",fontSize:11}}>{c.noid||c.cprod}</td><td style={{fontSize:12}}>{c.descripcion}</td><td style={{fontFamily:"var(--font-mono)"}}>{c.cant}</td><td style={{fontFamily:"var(--font-mono)"}}>{fmtCurrency(c.vu)}</td><td style={{fontFamily:"var(--font-mono)",color:"var(--danger)"}}>{c.descuento>0?`-${fmtCurrency(c.descuento)}`:"—"}</td><td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{fmtCurrency(c.importe)}</td></tr>
+              ))}</tbody>
+              <tfoot>
+                <tr style={{borderTop:"2px solid var(--border)"}}><td colSpan={5} style={{textAlign:"right",fontWeight:700}}>Subtotal:</td><td style={{fontFamily:"var(--font-mono)",fontWeight:700}}>{fmtCurrency(cfdi.subTotal)}</td></tr>
+                {cfdi.descuento>0&&<tr><td colSpan={5} style={{textAlign:"right",color:"var(--danger)",fontWeight:600}}>Descuento global:</td><td style={{fontFamily:"var(--font-mono)",color:"var(--danger)"}}>-{fmtCurrency(cfdi.descuento)}</td></tr>}
+                {cfdi.descLineas>0&&<tr><td colSpan={5} style={{textAlign:"right",fontSize:11.5,color:"var(--text-tertiary)"}}>Desc. por línea:</td><td style={{fontFamily:"var(--font-mono)",fontSize:11.5,color:"var(--danger)"}}>-{fmtCurrency(cfdi.descLineas)}</td></tr>}
+                <tr><td colSpan={5} style={{textAlign:"right",fontWeight:600}}>IVA:</td><td style={{fontFamily:"var(--font-mono)"}}>{fmtCurrency(cfdi.impuestos.total)}</td></tr>
+                <tr style={{borderTop:"2px solid var(--border)"}}><td colSpan={5} style={{textAlign:"right",fontWeight:700,fontSize:15}}>Total CFDI:</td><td style={{fontFamily:"var(--font-mono)",fontWeight:700,fontSize:15}}>{fmtCurrency(cfdi.total)}</td></tr>
+              </tfoot>
+            </table>
+          </div>
+          <div style={{background:"#f8fafc",borderRadius:8,padding:"14px 18px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span>Total pedido:</span><span style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{fmtCurrency(order.total)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span>Total CFDI (con IVA):</span><span style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{fmtCurrency(cfdi.total)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,paddingTop:6,borderTop:"1px solid var(--border)",color:diff<1?"var(--success)":"var(--warning)"}}><span>Diferencia:</span><span style={{fontFamily:"var(--font-mono)"}}>{fmtCurrency(diff)} {diff<1?"✓":"⚠️ Incluye IVA y descuentos"}</span></div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={onSave}>✓ Registrar factura con datos del CFDI</button>
+        </div>
+      </div>
+    </div>
+  );
 }
