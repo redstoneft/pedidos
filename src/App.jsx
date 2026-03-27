@@ -40,7 +40,7 @@ const CFDIDemo = (order) => {
   const sub = order.lines.reduce((s, l) => s + ((l.deliveredQty || l.quantity) * l.unitPrice), 0);
   const desc = order.lines.reduce((s, l) => s + (l.discount || 0), 0);
   const iva = (sub - desc) * 0.16; const tot = sub - desc + iva;
-  return `<?xml version="1.0"?><cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="${Math.floor(10000 + Math.random() * 90000)}" Fecha="${now}" FormaPago="03" MetodoPago="PUE" SubTotal="${sub.toFixed(2)}" Descuento="${desc.toFixed(2)}" Moneda="MXN" Total="${tot.toFixed(2)}" TipoDeComprobante="I" LugarExpedicion="06600"><cfdi:Emisor Rfc="TUE123456ABC" Nombre="Tu Empresa SA de CV" RegimenFiscal="601"/><cfdi:Receptor Rfc="${order.chainCode || "WAL"}890101XYZ" Nombre="${order.chain}" UsoCFDI="G03" RegimenFiscalReceptor="601"/><cfdi:Conceptos>${ls}</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="${iva.toFixed(2)}"><cfdi:Traslados><cfdi:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="${iva.toFixed(2)}"/></cfdi:Traslados></cfdi:Impuestos><cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="${uuid}" FechaTimbrado="${now}" RfcProvCertif="SPR190613I52" SelloCFD="abc..." SelloSAT="xyz..." NoCertificadoSAT="00001000000508102505"/></cfdi:Complemento></cfdi:Comprobante>`;
+  return `<?xml version="1.0"?><cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="A" Folio="${Math.floor(10000 + Math.random() * 90000)}" Fecha="${now}" FormaPago="03" MetodoPago="PUE" SubTotal="${sub.toFixed(2)}" Descuento="${desc.toFixed(2)}" Moneda="MXN" Total="${tot.toFixed(2)}" TipoDeComprobante="I" LugarExpedicion="00000"><cfdi:Emisor Rfc="XAXX010101000" Nombre="[Tu Empresa]" RegimenFiscal="601"/><cfdi:Receptor Rfc="XAXX010101000" Nombre="${order.chain || "[Cadena]"}" UsoCFDI="G03" RegimenFiscalReceptor="601"/><cfdi:Conceptos>${ls}</cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="${iva.toFixed(2)}"><cfdi:Traslados><cfdi:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="${iva.toFixed(2)}"/></cfdi:Traslados></cfdi:Impuestos><cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="${uuid}" FechaTimbrado="${now}" RfcProvCertif="SPR190613I52" SelloCFD="..." SelloSAT="..." NoCertificadoSAT="00000000000000000000"/></cfdi:Complemento></cfdi:Comprobante>`;
 };
 
 // ── File Download Helper ──
@@ -53,50 +53,11 @@ function downloadFile(fileObj) {
   }
 }
 
-// --- MASTER CATALOGS DATA ---
-const MASTER_PRODUCTS = [
-  { id: "SKU-001", description: "Aceite vegetal 1L", category: "Aceites", presentation: "1L", unit: "CJ", basePrice: 32.5, ean: "7501234567001", active: true },
-  { id: "SKU-002", description: "Arroz grano largo 1kg", category: "Granos", presentation: "1kg", unit: "CJ", basePrice: 24.9, ean: "7501234567002", active: true },
-  { id: "SKU-003", description: "Frijol negro 1kg", category: "Granos", presentation: "1kg", unit: "CJ", basePrice: 29.5, ean: "7501234567003", active: true },
-  { id: "SKU-004", description: "Azúcar estándar 1kg", category: "Endulzantes", presentation: "1kg", unit: "CJ", basePrice: 28.0, ean: "7501234567004", active: true },
-  { id: "SKU-005", description: "Harina de trigo 1kg", category: "Harinas", presentation: "1kg", unit: "CJ", basePrice: 18.5, ean: "7501234567005", active: true },
-  { id: "SKU-006", description: "Leche entera 1L", category: "Lácteos", presentation: "1L", unit: "CJ", basePrice: 22.0, ean: "7501234567006", active: true },
-  { id: "SKU-007", description: "Atún en agua 170g", category: "Enlatados", presentation: "170g", unit: "CJ", basePrice: 19.9, ean: "7501234567007", active: true },
-  { id: "SKU-008", description: "Pasta spaghetti 500g", category: "Pastas", presentation: "500g", unit: "CJ", basePrice: 14.5, ean: "7501234567008", active: true },
-  { id: "SKU-009", description: "Salsa verde 250ml", category: "Salsas", presentation: "250ml", unit: "CJ", basePrice: 16.8, ean: "7501234567009", active: true },
-  { id: "SKU-010", description: "Galletas María 400g", category: "Galletas", presentation: "400g", unit: "CJ", basePrice: 21.0, ean: "7501234567010", active: true },
-  { id: "SKU-011", description: "Mayonesa 390g", category: "Aderezos", presentation: "390g", unit: "CJ", basePrice: 35.0, ean: "7501234567011", active: true },
-  { id: "SKU-012", description: "Café soluble 200g", category: "Bebidas", presentation: "200g", unit: "CJ", basePrice: 89.0, ean: "7501234567012", active: true },
-];
-
-const MASTER_CHAINS = [
-  { id: "CH-01", name: "Walmart", code: "WAL", cedis: ["CEDIS Norte", "CEDIS Centro", "CEDIS Occidente", "CEDIS Sureste"], paymentDays: 45, contact: "compras@walmart.com.mx", active: true },
-  { id: "CH-02", name: "Costco", code: "COS", cedis: ["CEDIS Norte", "CEDIS Centro"], paymentDays: 30, contact: "buyers@costco.com.mx", active: true },
-  { id: "CH-03", name: "Soriana", code: "SOR", cedis: ["CEDIS Norte", "CEDIS Centro", "CEDIS Bajío", "CEDIS Noroeste"], paymentDays: 60, contact: "pedidos@soriana.com", active: true },
-  { id: "CH-04", name: "Chedraui", code: "CHE", cedis: ["CEDIS Centro", "CEDIS Sur", "CEDIS Sureste"], paymentDays: 45, contact: "compras@chedraui.com.mx", active: true },
-  { id: "CH-05", name: "HEB", code: "HEB", cedis: ["CEDIS Norte", "CEDIS Noroeste"], paymentDays: 30, contact: "supply@heb.com.mx", active: true },
-  { id: "CH-06", name: "La Comer", code: "COM", cedis: ["CEDIS Centro"], paymentDays: 45, contact: "pedidos@lacomer.com.mx", active: true },
-  { id: "CH-07", name: "Bodega Aurrera", code: "BAU", cedis: ["CEDIS Centro", "CEDIS Sur", "CEDIS Bajío"], paymentDays: 45, contact: "compras@bodegaaurrera.com", active: true },
-];
-
-const MASTER_CARRIERS = [
-  { id: "TR-01", name: "Transporte Propio", code: "PROP", vehicles: 8, contact: "5541234567", active: true },
-  { id: "TR-02", name: "DHL Supply Chain", code: "DHL", vehicles: 0, contact: "5598765432", active: true },
-  { id: "TR-03", name: "Estafeta Cargo", code: "EST", vehicles: 0, contact: "5512345678", active: true },
-  { id: "TR-04", name: "FedEx Freight", code: "FDX", vehicles: 0, contact: "5587654321", active: true },
-  { id: "TR-05", name: "TGA Logística", code: "TGA", vehicles: 12, contact: "5523456789", active: true },
-];
-
-const SKU_ALIASES = [
-  { chainCode: "WAL", chainSku: "WAL-AV-001", internalSku: "SKU-001", description: "Aceite vegetal 1L" },
-  { chainCode: "WAL", chainSku: "WAL-AR-002", internalSku: "SKU-002", description: "Arroz grano largo 1kg" },
-  { chainCode: "COS", chainSku: "COS-10001", internalSku: "SKU-001", description: "Aceite vegetal 1L" },
-  { chainCode: "COS", chainSku: "COS-10003", internalSku: "SKU-003", description: "Frijol negro 1kg" },
-  { chainCode: "SOR", chainSku: "SOR-AV001", internalSku: "SKU-001", description: "Aceite vegetal 1L" },
-  { chainCode: "SOR", chainSku: "SOR-FN003", internalSku: "SKU-003", description: "Frijol negro 1kg" },
-  { chainCode: "CHE", chainSku: "CHE-0001-AV", internalSku: "SKU-001", description: "Aceite vegetal 1L" },
-  { chainCode: "HEB", chainSku: "HEB-ACE-1L", internalSku: "SKU-001", description: "Aceite vegetal 1L" },
-];
+// --- CATÁLOGOS — Vacíos, tú los alimentas ---
+const MASTER_PRODUCTS = [];
+const MASTER_CHAINS = [];
+const MASTER_CARRIERS = [];
+const SKU_ALIASES = [];
 
 // --- STATUSES ---
 const STATUSES = {
@@ -126,11 +87,11 @@ const DELIVERY_STATUSES = {
   REJECTED: { label: "Rechazado", color: "#ef4444", bg: "#fee2e2" },
 };
 
-const CEDIS_LIST = ["CEDIS Norte", "CEDIS Sur", "CEDIS Centro", "CEDIS Bajío", "CEDIS Occidente", "CEDIS Noroeste", "CEDIS Sureste"];
-const DESTINATIONS = ["Ciudad de México", "Monterrey", "Guadalajara", "Puebla", "Querétaro", "Mérida", "Cancún", "Tijuana", "León"];
+const CEDIS_LIST = [];
+const DESTINATIONS = [];
 const TIME_SLOTS = ["06:00","07:00","08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00"];
 const CARRIERS_NAMES = MASTER_CARRIERS.map(c => c.name);
-const REJECTION_REASONS = ["Producto dañado", "Documentación incompleta", "Fuera de horario", "Cantidad incorrecta", "Producto equivocado", "Temperatura inadecuada", "Sin espacio en andén", "Pedido cancelado"];
+const REJECTION_REASONS = [];
 
 // --- UTILS ---
 const fmt = d => { if (!d) return "—"; return new Date(d+"T12:00:00").toLocaleDateString("es-MX",{day:"2-digit",month:"short",year:"numeric"})};
@@ -145,106 +106,8 @@ const rndInt = (a,b) => Math.floor(randomBetween(a,b));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const uid = () => `${Date.now()}-${Math.random().toString(36).substr(2,6)}`;
 
-// --- DEMO DATA GENERATOR ---
-function generateOrders() {
-  const orders = []; const now = new Date();
-  for (let i = 0; i < 40; i++) {
-    const chain = pick(MASTER_CHAINS);
-    const allSt = ["UPLOADED","EXTRACTED","PENDING_REVIEW","VALIDATED","SCHEDULED","IN_TRANSIT","DELIVERED","PARTIAL_DELIVERY","REJECTED","INVOICED","RECONCILED","ERROR"];
-    const status = pick(allSt);
-    const emD = new Date(now.getTime() - randomBetween(1,45)*86400000);
-    const delD = new Date(emD.getTime() + randomBetween(3,12)*86400000);
-    const expD = new Date(delD.getTime() + randomBetween(1,5)*86400000);
-    const cedis = pick(chain.cedis);
-    const dest = pick(DESTINATIONS);
-    const conf = +(0.55+Math.random()*0.45).toFixed(2);
-    const lc = rndInt(2,7);
-    const lines = [];
-    for (let j=0;j<lc;j++){
-      const p = pick(MASTER_PRODUCTS);
-      const qty = rndInt(10,500);
-      const delivered = ["DELIVERED","PARTIAL_DELIVERY","INVOICED","RECONCILED"].includes(status);
-      const dq = delivered?(status==="PARTIAL_DELIVERY"?Math.floor(qty*(0.5+Math.random()*0.4)):qty):0;
-      lines.push({id:`L-${i}-${j}`,sku:p.id,clientCode:`${chain.code}-${p.id}`,internalCode:p.id,description:p.description,presentation:p.presentation,quantity:qty,unit:p.unit,unitPrice:p.basePrice,lineTotal:+(qty*p.basePrice).toFixed(2),discount:Math.random()>0.7?+(Math.random()*5).toFixed(2):0,confidence:+(0.6+Math.random()*0.4).toFixed(2),deliveredQty:dq,invoicedQty:["INVOICED","RECONCILED"].includes(status)?dq:0,invoicedPrice:["INVOICED","RECONCILED"].includes(status)?p.basePrice:0});
-    }
-    const total = lines.reduce((s,l)=>s+l.lineTotal,0);
-    const hasDel = ["SCHEDULED","IN_TRANSIT","DELIVERED","PARTIAL_DELIVERY","REJECTED","INVOICED","RECONCILED"].includes(status);
-    const isDel = ["DELIVERED","PARTIAL_DELIVERY","INVOICED","RECONCILED"].includes(status);
-    const appD = hasDel?new Date(delD.getTime()+(Math.random()>0.5?0:86400000)):null;
-    const ts = hasDel?pick(TIME_SLOTS):null;
-    const orderNum = `PO-${chain.code}-${10000+rndInt(0,90000)}`;
-
-    // Duplicate detection: force 2 duplicates
-    const isDup = i===38||i===39;
-    const dupRef = isDup ? orders[rndInt(0, Math.min(i,orders.length-1))]?.orderNumber : null;
-
-    const delivery = {
-      status: isDel?(status==="PARTIAL_DELIVERY"?"PARTIAL":"DELIVERED"):status==="REJECTED"?"REJECTED":status==="IN_TRANSIT"?"IN_TRANSIT":hasDel?"SCHEDULED":"PENDING",
-      appointmentDate: appD?appD.toISOString().split("T")[0]:null,
-      appointmentTime: ts, appointmentEndTime: ts?`${String(parseInt(ts)+2).padStart(2,"0")}:00`:null,
-      carrier: hasDel?pick(CARRIERS_NAMES):null,
-      driverName: hasDel?pick(["Juan Pérez","Carlos Ramírez","Miguel Torres","Roberto Sánchez"]):null,
-      driverPhone: hasDel?`55${rndInt(1000,9999)}${rndInt(1000,9999)}`:null,
-      vehiclePlates: hasDel?`${pick(["MEX","NLE","JAL"])}-${rndInt(100,999)}-${String.fromCharCode(65+rndInt(0,26))}${String.fromCharCode(65+rndInt(0,26))}`:null,
-      dockNumber: hasDel?`Andén ${rndInt(1,20)}`:null,
-      actualDeliveryDate: isDel?new Date(appD.getTime()+(Math.random()>0.7?86400000:0)).toISOString().split("T")[0]:null,
-      actualDeliveryTime: isDel?`${String(parseInt(ts)+rndInt(0,3)).padStart(2,"0")}:${Math.random()>0.5?"30":"15"}`:null,
-      receivedBy: isDel?pick(["Ana García","Pedro López","María Hernández"]):null,
-      proofOfDelivery: isDel?`POD-${uid()}`:null,
-      rejectionReason: status==="REJECTED"?pick(REJECTION_REASONS):null,
-    };
-
-    const invoice = ["INVOICED","RECONCILED"].includes(status) ? {
-      invoiceNumber: `FAC-${rndInt(10000,99999)}`,
-      invoiceDate: isDel ? new Date(new Date(delivery.actualDeliveryDate+"T12:00:00").getTime()+rndInt(1,5)*86400000).toISOString().split("T")[0] : null,
-      invoiceTotal: +(lines.reduce((s,l)=>s+(l.invoicedQty||0)*(l.invoicedPrice||0),0)).toFixed(2),
-      invoiceFile: `factura_${chain.code.toLowerCase()}_${rndInt(10000,99999)}.pdf`,
-      paymentDueDate: isDel ? new Date(new Date(delivery.actualDeliveryDate+"T12:00:00").getTime()+chain.paymentDays*86400000).toISOString().split("T")[0] : null,
-      reconciled: status==="RECONCILED",
-      discrepancies: status==="RECONCILED" && Math.random()>0.6 ? [{field:"total",orderValue:total,invoiceValue:+(total*0.95).toFixed(2),difference:+(total*0.05).toFixed(2),reason:"Descuento por pronto pago"}] : [],
-    } : null;
-
-    const validations = [];
-    if(conf<0.7) validations.push({type:"warning",field:"general",message:"Confianza de extracción baja"});
-    if(isDup) validations.push({type:"error",field:"orderNumber",message:`Posible duplicado de ${dupRef||"pedido anterior"}`});
-
-    const history = [
-      {date:emD.toISOString(),action:"Archivo cargado",user:"admin@empresa.com",icon:"📥"},
-      {date:new Date(emD.getTime()+60000).toISOString(),action:"Extracción completada",user:"sistema",icon:"🤖"},
-    ];
-    if(hasDel) history.push({date:new Date(emD.getTime()+86400000).toISOString(),action:`Cita: ${appD?.toISOString().split("T")[0]} ${ts}`,user:"admin@empresa.com",icon:"📅"});
-    if(isDel) history.push({date:new Date(appD.getTime()+7200000).toISOString(),action:`Entrega confirmada`,user:"admin@empresa.com",icon:"✅"});
-    if(invoice) history.push({date:new Date(appD.getTime()+5*86400000).toISOString(),action:`Factura ${invoice.invoiceNumber} registrada`,user:"admin@empresa.com",icon:"🧾"});
-
-    orders.push({
-      id:`ORD-${String(2024001+i)}`,chain:chain.name,chainCode:chain.code,orderNumber:isDup?(dupRef||orderNum):orderNum,
-      emissionDate:emD.toISOString().split("T")[0],deliveryDate:delD.toISOString().split("T")[0],
-      expiryDate:expD.toISOString().split("T")[0],
-      destination:dest,cedis,branch:`Sucursal ${dest} ${rndInt(1,20)}`,
-      deliveryAddress:`Av. Industrial ${rndInt(100,900)}, ${dest}`,
-      buyer:`Comprador ${pick(["García","López","Martínez","Hernández"])}`,
-      notes:"",currency:"MXN",paymentTerms:`${chain.paymentDays} días`,
-      lines,total:+total.toFixed(2),
-      fileType:pick(["PDF","Excel","CSV"]),fileName:`pedido_${chain.code.toLowerCase()}_${10000+i}.${pick(["pdf","xlsx","csv"])}`,
-      uploadDate:emD.toISOString(),uploadedBy:"admin@empresa.com",
-      confidence:conf,status:isDup?"DUPLICATE":status,validations,history,reviewed:["VALIDATED","SCHEDULED","DELIVERED","INVOICED","RECONCILED"].includes(status),
-      delivery,invoice,
-      duplicateOf: isDup?dupRef:null,
-    });
-  }
-  return orders;
-}
-
-// --- BACKUP DATA ---
-const BACKUPS = [
-  {id:"BK-001",date:"2026-03-24T02:00:00Z",type:"Automático",size:"245 MB",status:"completed",records:1247,duration:"3m 12s",storage:"AWS S3"},
-  {id:"BK-002",date:"2026-03-23T02:00:00Z",type:"Automático",size:"243 MB",status:"completed",records:1235,duration:"3m 08s",storage:"AWS S3"},
-  {id:"BK-003",date:"2026-03-22T02:00:00Z",type:"Automático",size:"240 MB",status:"completed",records:1220,duration:"3m 05s",storage:"AWS S3"},
-  {id:"BK-004",date:"2026-03-21T14:30:00Z",type:"Manual",size:"239 MB",status:"completed",records:1218,duration:"2m 58s",storage:"AWS S3"},
-  {id:"BK-005",date:"2026-03-20T02:00:00Z",type:"Automático",size:"236 MB",status:"completed",records:1205,duration:"3m 01s",storage:"AWS S3"},
-  {id:"BK-006",date:"2026-03-19T02:00:00Z",type:"Automático",size:"234 MB",status:"failed",records:0,duration:"0m 45s",storage:"AWS S3",error:"Timeout de conexión"},
-  {id:"BK-007",date:"2026-03-18T02:00:00Z",type:"Automático",size:"232 MB",status:"completed",records:1190,duration:"2m 55s",storage:"AWS S3"},
-];
+// --- Sin datos demo — todo se alimenta desde la app ---
+const BACKUPS = [];
 
 // --- ICONS ---
 const I={
@@ -646,7 +509,7 @@ function ReconciliationView({orders, onUpdate, setToast, onUploadInvoice}) {
 
   const reconcile = (order) => {
     const updated = {...order, status: "RECONCILED", invoice: {...order.invoice, reconciled: true},
-      history: [...order.history, {date: new Date().toISOString(), action: "Pedido conciliado con factura", user: "admin@empresa.com", icon: "✅"}]};
+      history: [...order.history, {date: new Date().toISOString(), action: "Pedido conciliado con factura", user: "", icon: "✅"}]};
     onUpdate(updated);
     setToast("Pedido conciliado");
   };
@@ -768,7 +631,7 @@ function ReconciliationView({orders, onUpdate, setToast, onUploadInvoice}) {
 // ==========================================
 // INVOICE UPLOAD MODAL — with Discounts
 // ==========================================
-const DISCOUNT_TYPES = ["Descuento comercial", "Pronto pago", "Volumen", "Promoción", "Merma", "Penalización logística", "Nota de crédito", "Bonificación", "Otro"];
+const DISCOUNT_TYPES = [];
 
 function InvoiceUploadModal({order, onSave, onClose}) {
   const existing = order.invoice || {};
@@ -985,12 +848,12 @@ function DuplicatesView({orders,onUpdate,setToast}){
   },[orders]);
 
   const markNotDuplicate=(order)=>{
-    const updated={...order,status:order.status==="DUPLICATE"?"PENDING_REVIEW":order.status,duplicateOf:null,validations:order.validations.filter(v=>!v.message.includes("Posible duplicado")),history:[...order.history,{date:new Date().toISOString(),action:"Marcado como NO duplicado",user:"admin@empresa.com",icon:"✅"}]};
+    const updated={...order,status:order.status==="DUPLICATE"?"PENDING_REVIEW":order.status,duplicateOf:null,validations:order.validations.filter(v=>!v.message.includes("Posible duplicado")),history:[...order.history,{date:new Date().toISOString(),action:"Marcado como NO duplicado",user:"",icon:"✅"}]};
     onUpdate(updated);setToast("Marcado como no duplicado");
   };
 
   const archiveDuplicate=(order)=>{
-    const updated={...order,status:"ARCHIVED",history:[...order.history,{date:new Date().toISOString(),action:"Archivado como duplicado",user:"admin@empresa.com",icon:"📦"}]};
+    const updated={...order,status:"ARCHIVED",history:[...order.history,{date:new Date().toISOString(),action:"Archivado como duplicado",user:"",icon:"📦"}]};
     onUpdate(updated);setToast("Duplicado archivado");
   };
 
@@ -1232,8 +1095,8 @@ function AlertsView({orders,onSelectOrder}){
 
 function OrderDetailView({order,onBack,onUpdate,onToast,onSchedule,onConfirm,onTransit,onUploadInvoice}){
   const [tab,setTab]=useState("general");const [ef,setEf]=useState(null);const [ev,setEv]=useState("");
-  const startEdit=(f,v)=>{setEf(f);setEv(v||"")};const saveEdit=f=>{if(ev!==order[f]){const u={...order,[f]:ev,history:[...order.history,{date:new Date().toISOString(),action:`"${f}" editado`,user:"admin@empresa.com",icon:"✏️"}]};onUpdate(u);onToast(`Actualizado: ${f}`)};setEf(null)};
-  const validate=()=>{const u={...order,status:"VALIDATED",reviewed:true,history:[...order.history,{date:new Date().toISOString(),action:"Validado",user:"admin@empresa.com",icon:"✅"}]};onUpdate(u);onToast("Validado")};
+  const startEdit=(f,v)=>{setEf(f);setEv(v||"")};const saveEdit=f=>{if(ev!==order[f]){const u={...order,[f]:ev,history:[...order.history,{date:new Date().toISOString(),action:`"${f}" editado`,user:"",icon:"✏️"}]};onUpdate(u);onToast(`Actualizado: ${f}`)};setEf(null)};
+  const validate=()=>{const u={...order,status:"VALIDATED",reviewed:true,history:[...order.history,{date:new Date().toISOString(),action:"Validado",user:"",icon:"✅"}]};onUpdate(u);onToast("Validado")};
   const FV=({field,value})=>{
     if(ef===field) return (
       <div className="inline-edit" style={{display:"flex",alignItems:"center",gap:3}}>
@@ -1260,7 +1123,7 @@ function OrderDetailView({order,onBack,onUpdate,onToast,onSchedule,onConfirm,onT
         {order.status==="VALIDATED"&&<button className="btn btn-purple btn-sm" onClick={()=>onSchedule(order)}>Cita</button>}
         {(d.status==="SCHEDULED"||d.status==="IN_TRANSIT")&&<button className="btn btn-success btn-sm" onClick={()=>onConfirm(order)}>Confirmar</button>}
         {["DELIVERED","PARTIAL_DELIVERY"].includes(order.status)&&!order.invoice&&<button className="btn btn-cyan" onClick={()=>onUploadInvoice(order)}>{I.receipt} Factura manual</button>}
-        {["DELIVERED","PARTIAL_DELIVERY"].includes(order.status)&&!order.invoice&&<button className="btn btn-primary btn-sm" onClick={()=>{const xml=CFDIDemo(order);const p=CFDIParse(xml);if(!p.error){onUpdate({...order,status:"INVOICED",invoice:{invoiceNumber:`${p.serie||""}${p.folio||""}`,invoiceDate:p.fecha?.substring(0,10),invoiceTotal:p.total,invoiceFile:`${p.serie||""}${p.folio||""}.xml`,reconciled:false,cfdiData:p,discounts:p.conceptos.filter(c=>c.descuento>0).map(c=>({type:"Desc. línea",concept:c.descripcion,amount:c.descuento})),discrepancies:[]},lines:order.lines.map(l=>{const m=p.conceptos.find(c=>c.noid===l.sku);return m?{...l,invoicedQty:m.cant,invoicedPrice:m.vu}:l}),history:[...order.history,{date:new Date().toISOString(),action:`CFDI demo registrado — UUID: ${p.timbre?.uuid?.substring(0,8)||"N/A"}`,user:"admin@empresa.com",icon:"🧾"}]});onToast("CFDI demo registrado")}}}>🧾 CFDI Demo</button>}
+        {["DELIVERED","PARTIAL_DELIVERY"].includes(order.status)&&!order.invoice&&<button className="btn btn-primary btn-sm" onClick={()=>{const xml=CFDIDemo(order);const p=CFDIParse(xml);if(!p.error){onUpdate({...order,status:"INVOICED",invoice:{invoiceNumber:`${p.serie||""}${p.folio||""}`,invoiceDate:p.fecha?.substring(0,10),invoiceTotal:p.total,invoiceFile:`${p.serie||""}${p.folio||""}.xml`,reconciled:false,cfdiData:p,discounts:p.conceptos.filter(c=>c.descuento>0).map(c=>({type:"Desc. línea",concept:c.descripcion,amount:c.descuento})),discrepancies:[]},lines:order.lines.map(l=>{const m=p.conceptos.find(c=>c.noid===l.sku);return m?{...l,invoicedQty:m.cant,invoicedPrice:m.vu}:l}),history:[...order.history,{date:new Date().toISOString(),action:`CFDI demo registrado — UUID: ${p.timbre?.uuid?.substring(0,8)||"N/A"}`,user:"",icon:"🧾"}]});onToast("CFDI demo registrado")}}}>🧾 CFDI Demo</button>}
         {!["VALIDATED","SCHEDULED","IN_TRANSIT","DELIVERED","INVOICED","RECONCILED"].includes(order.status)&&<button className="btn btn-success btn-sm" onClick={validate}>Validar</button>}
       </div>
     </div>
@@ -1450,7 +1313,7 @@ function ProcessingModal({files,onComplete}){
 // ============================================================
 export default function App(){
   const [view,setView]=useState("dashboard");
-  const [orders,setOrders]=useState(()=>generateOrders());
+  const [orders,setOrders]=useState([]);
   const [selected,setSelected]=useState(null);
   const [processing,setProcessing]=useState(false);const [procFiles,setProcFiles]=useState(null);
   const [toast,setToast]=useState(null);
@@ -1470,35 +1333,34 @@ export default function App(){
     const diff=Math.abs(cfdi.total-order.total);
     const invoice={invoiceNumber:`${cfdi.serie||""}${cfdi.folio||""}`||`CFDI-${Date.now()}`,invoiceDate:cfdi.fecha?.substring(0,10)||today(),invoiceTotal:cfdi.total,invoiceFile:`${cfdi.serie||"CFDI"}${cfdi.folio||""}.xml`,reconciled:false,cfdiData:cfdi,discounts,discrepancies:diff>1?[{reason:totalDesc>0?`Descuentos + IVA`:"Incluye IVA",difference:+(cfdi.total-order.total).toFixed(2)}]:[]};
     const updatedLines=order.lines.map(l=>{const m=cfdi.conceptos.find(c=>c.noid===l.sku||c.descripcion?.includes(l.description?.split(" ")[0]));return m?{...l,invoicedQty:m.cant,invoicedPrice:m.vu}:l});
-    updateOrder({...order,status:"INVOICED",invoice,lines:updatedLines,history:[...order.history,{date:new Date().toISOString(),action:`CFDI ${invoice.invoiceNumber} registrado — UUID: ${cfdi.timbre?.uuid?.substring(0,8)||"N/A"}...`,user:"admin@empresa.com",icon:"🧾"}]});
+    updateOrder({...order,status:"INVOICED",invoice,lines:updatedLines,history:[...order.history,{date:new Date().toISOString(),action:`CFDI ${invoice.invoiceNumber} registrado — UUID: ${cfdi.timbre?.uuid?.substring(0,8)||"N/A"}...`,user:"",icon:"🧾"}]});
     setCfdiModal(null);setCfdiOrder(null);setCfdiData(null);
     setToast(`CFDI ${invoice.invoiceNumber} registrado con ${cfdi.conceptos.length} conceptos`);
     setView("cfdi");
   };
 
   const updateOrder=u=>{setOrders(p=>p.map(o=>o.id===u.id?u:o));if(selected?.id===u.id)setSelected(u)};
-  const handleScheduleSave=(data,isR)=>{const o=scheduleM;updateOrder({...o,status:"SCHEDULED",delivery:{...o.delivery,...data},history:[...o.history,{date:new Date().toISOString(),action:isR?`Reprogramada: ${data.appointmentDate}`:`Cita: ${data.appointmentDate} ${data.appointmentTime}`,user:"admin@empresa.com",icon:"📅"}]});setToast(isR?"Reprogramada":"Cita programada")};
-  const handleTransit=o=>{updateOrder({...o,status:"IN_TRANSIT",delivery:{...o.delivery,status:"IN_TRANSIT"},history:[...o.history,{date:new Date().toISOString(),action:"En tránsito",user:"admin@empresa.com",icon:"🚚"}]});setToast("En tránsito")};
+  const handleScheduleSave=(data,isR)=>{const o=scheduleM;updateOrder({...o,status:"SCHEDULED",delivery:{...o.delivery,...data},history:[...o.history,{date:new Date().toISOString(),action:isR?`Reprogramada: ${data.appointmentDate}`:`Cita: ${data.appointmentDate} ${data.appointmentTime}`,user:"",icon:"📅"}]});setToast(isR?"Reprogramada":"Cita programada")};
+  const handleTransit=o=>{updateOrder({...o,status:"IN_TRANSIT",delivery:{...o.delivery,status:"IN_TRANSIT"},history:[...o.history,{date:new Date().toISOString(),action:"En tránsito",user:"",icon:"🚚"}]});setToast("En tránsito")};
   const handleConfirmSave=(form,lineQtys)=>{const o=confirmM;let ns,ds,txt;
     if(form.type==="full"){ns="DELIVERED";ds="DELIVERED";txt=`Entrega completa — ${form.receivedBy}`}else if(form.type==="partial"){ns="PARTIAL_DELIVERY";ds="PARTIAL";txt=`Entrega parcial — ${form.receivedBy}`}else{ns="REJECTED";ds="REJECTED";txt=`Rechazado: ${form.rejectionReason}`}
     updateOrder({...o,status:ns,delivery:{...o.delivery,status:ds,actualDeliveryDate:form.actualDeliveryDate,actualDeliveryTime:form.actualDeliveryTime,receivedBy:form.receivedBy,proofOfDelivery:form.proofOfDelivery,rejectionReason:form.rejectionReason},
-      history:[...o.history,{date:new Date().toISOString(),action:txt,user:"admin@empresa.com",icon:form.type==="full"?"✅":form.type==="partial"?"⚠️":"❌"}]});setToast(form.type==="rejected"?"Rechazo registrado":"Entrega confirmada")};
+      history:[...o.history,{date:new Date().toISOString(),action:txt,user:"",icon:form.type==="full"?"✅":form.type==="partial"?"⚠️":"❌"}]});setToast(form.type==="rejected"?"Rechazo registrado":"Entrega confirmada")};
   const handleInvoiceSave=(invoiceData, invoiceLines)=>{
     const o=invoiceM;
     const updatedLines=o.lines.map(l=>{const il=invoiceLines.find(x=>x.id===l.id);return il?{...l,invoicedQty:il.invoicedQty,invoicedPrice:il.invoicedPrice}:l});
     const updated={...o,status:"INVOICED",lines:updatedLines,invoice:invoiceData,
-      history:[...o.history,{date:new Date().toISOString(),action:`Factura ${invoiceData.invoiceNumber} registrada${invoiceData.discounts?.length>0?` (${invoiceData.discounts.length} descuento${invoiceData.discounts.length>1?"s":""})`:""}`,user:"admin@empresa.com",icon:"🧾"}]};
+      history:[...o.history,{date:new Date().toISOString(),action:`Factura ${invoiceData.invoiceNumber} registrada${invoiceData.discounts?.length>0?` (${invoiceData.discounts.length} descuento${invoiceData.discounts.length>1?"s":""})`:""}`,user:"",icon:"🧾"}]};
     updateOrder(updated);setToast(`Factura ${invoiceData.invoiceNumber} registrada`);
   };
   const handleProcess=f=>{setProcFiles(f);setProcessing(true)};
-  const handleProcessDone=()=>{const nw=(procFiles||[{name:"demo.pdf"}]).map((f,i)=>{const ch=pick(MASTER_CHAINS);
-    return{id:`ORD-${uid()}`,chain:ch.name,chainCode:ch.code,orderNumber:`PO-${ch.code}-${rndInt(10000,99999)}`,emissionDate:today(),deliveryDate:new Date(Date.now()+7*86400000).toISOString().split("T")[0],expiryDate:new Date(Date.now()+14*86400000).toISOString().split("T")[0],
-      destination:pick(DESTINATIONS),cedis:pick(ch.cedis),branch:"Nueva",deliveryAddress:"Por confirmar",buyer:"Pendiente",notes:"",currency:"MXN",paymentTerms:`${ch.paymentDays} días`,
-      lines:[{id:`L-n-${i}`,sku:"SKU-001",clientCode:`${ch.code}-001`,internalCode:"SKU-001",description:"Aceite vegetal 1L",presentation:"1L",quantity:100,unit:"CJ",unitPrice:32.5,lineTotal:3250,discount:0,confidence:.85,deliveredQty:0,invoicedQty:0,invoicedPrice:0}],
-      total:3250,fileType:f.name?.split(".").pop()?.toUpperCase()||"PDF",fileName:f.name||"doc.pdf",uploadDate:new Date().toISOString(),uploadedBy:"admin@empresa.com",confidence:.82,status:"PENDING_REVIEW",
-      validations:[{type:"warning",field:"general",message:"Nuevo — revisar"}],history:[{date:new Date().toISOString(),action:"Cargado",user:"admin@empresa.com",icon:"📥"}],reviewed:false,
+  const handleProcessDone=()=>{const nw=(procFiles||[{name:"archivo.pdf"}]).map((f,i)=>{
+    return{id:`ORD-${uid()}`,chain:"",chainCode:"",orderNumber:`PO-${rndInt(10000,99999)}`,emissionDate:today(),deliveryDate:"",expiryDate:"",
+      destination:"",cedis:"",branch:"",deliveryAddress:"",buyer:"",notes:"",currency:"MXN",paymentTerms:"",
+      lines:[],total:0,fileType:f.name?.split(".").pop()?.toUpperCase()||"PDF",fileName:f.name||"archivo",uploadDate:new Date().toISOString(),uploadedBy:"",confidence:0,status:"PENDING_REVIEW",
+      validations:[{type:"warning",field:"general",message:"Nuevo — completar datos"}],history:[{date:new Date().toISOString(),action:"Archivo cargado",user:"",icon:"📥"}],reviewed:false,
       delivery:{status:"PENDING",appointmentDate:null,appointmentTime:null,appointmentEndTime:null,carrier:null,driverName:null,driverPhone:null,vehiclePlates:null,dockNumber:null,actualDeliveryDate:null,actualDeliveryTime:null,receivedBy:null,proofOfDelivery:null,rejectionReason:null},invoice:null,duplicateOf:null,
-      uploadedFiles:[{name:f.name||"documento",size:f.size?`${(f.size/1024).toFixed(1)} KB`:"N/A",type:f.name?.split(".").pop()||"pdf",dataUrl:f.dataUrl||null}]}});
+      uploadedFiles:[{name:f.name||"archivo",size:f.size?`${(f.size/1024).toFixed(1)} KB`:"N/A",type:f.name?.split(".").pop()||"pdf",dataUrl:f.dataUrl||null}]}});
     setOrders(p=>[...nw,...p]);setProcessing(false);setProcFiles(null);setView("dashboard");setToast(`${nw.length} procesado(s)`)};
   const go=o=>{setSelected(o);setView("detail")};
 
